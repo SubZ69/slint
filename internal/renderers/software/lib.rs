@@ -729,6 +729,47 @@ impl SoftwareRenderer {
     }
 }
 
+#[cfg(feature = "testing")]
+/// Draws one line of an `Rgba` texture scaled from `src_width` x `src_height` to `dst_width` x `dst_height`,
+/// for benchmarking `image-rendering: smooth` against nearest-neighbor.
+/// Not part of the public API.
+pub fn bench_draw_rgba_texture_line(
+    data: &[u8],
+    src_width: u16,
+    src_height: u16,
+    dst_width: i16,
+    dst_height: i16,
+    line: i16,
+    smooth: bool,
+    line_buffer: &mut [PremultipliedRgbaColor],
+) {
+    let span: PhysicalRect =
+        euclid::Rect::new(euclid::Point2D::new(0, 0), euclid::Size2D::new(dst_width, dst_height));
+    let texture = SceneTexture {
+        data,
+        format: TexturePixelFormat::Rgba,
+        pixel_stride: src_width,
+        extra: SceneTextureExtra {
+            dx: Fixed::from_fraction(src_width, dst_width as u16),
+            dy: Fixed::from_fraction(src_height, dst_height as u16),
+            off_x: Fixed::<u16, 4>::from_integer(0),
+            off_y: Fixed::<u16, 4>::from_integer(0),
+            colorize: Color::default(),
+            alpha: 255,
+            rotation: RenderingRotation::NoRotation,
+            smooth,
+        },
+    };
+    draw_functions::draw_texture_line(
+        &span,
+        PhysicalLength::new(line),
+        &texture,
+        line_buffer,
+        0,
+        0,
+    );
+}
+
 impl SoftwareRenderer {
     /// Create a new Renderer
     pub fn new() -> Self {

@@ -3798,6 +3798,7 @@ dependencies = [
  "bytemuck",
  "clru",
  "derive_more",
+ "divan",
  "euclid",
  "i-slint-common",
  "i-slint-core",

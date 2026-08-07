@@ -52,6 +52,14 @@ swash = { workspace = true, optional = true, features = ["scale", "render"] }
 zeno = { version = "0.3.3", optional = true, default-features = false, features = ["eval"] }
 lyon_path = { workspace = true, optional = true }
 
+[dev-dependencies]
+divan = "0.1.14"
+
+[[bench]]
+name = "bilinear"
+harness = false
+required-features = ["testing"]
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(cbindgen)", "cfg(slint_nightly_test)"] }
 
