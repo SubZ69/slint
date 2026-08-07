@@ -86,6 +86,11 @@ pub struct DrawTextureArgs {
 
     /// If the texture is to be tiled, this contains the information about the tiling
     pub tiling: Option<TilingInfo>,
+
+    /// Whether to use bilinear filtering instead of nearest-neighbor,
+    /// from the `Image`'s `image-rendering` property.
+    /// No-op unless the `bilinear-filtering` feature is enabled.
+    pub smooth: bool,
 }
 
 impl DrawTextureArgs {

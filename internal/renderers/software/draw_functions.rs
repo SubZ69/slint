@@ -29,10 +29,13 @@ pub(super) fn draw_texture_line(
         data,
         format,
         pixel_stride,
-        extra: super::SceneTextureExtra { colorize, alpha, rotation, dx, dy, off_x, off_y },
+        extra: super::SceneTextureExtra { colorize, alpha, rotation, dx, dy, off_x, off_y, smooth },
     } = *texture;
 
     let source_size = texture.source_size().cast::<i32>();
+    // Byte width of one source row.
+    // Used by the bilinear Rgba path to keep its "right neighbor" read within the current row.
+    let row_width_bytes = source_size.width as usize * format.bpp();
     let len = line_buffer.len();
     let y = line - span.origin.y_length();
     let y = if rotation.mirror_width() { span.size.height - y.get() - 1 } else { y.get() } as i32;
@@ -82,6 +85,10 @@ pub(super) fn draw_texture_line(
         end = end.min(len);
         let mut begin = 0;
         let row_fract = row.fract();
+        // Byte stride.
+        // SignedDistanceField's bpp of 1 makes pixel and byte strides numerically equal,
+        // but other formats need the multiply below to get a byte stride.
+        let stride_bytes = pixel_stride as usize * format.bpp();
         while begin < len {
             fetch_blend_pixel(
                 &mut line_buffer[begin..end],
@@ -89,7 +96,8 @@ pub(super) fn draw_texture_line(
                 data,
                 alpha,
                 colorize,
-                (pixel_stride as usize, dy),
+                smooth,
+                (stride_bytes, dy, row_width_bytes),
                 #[inline(always)]
                 |bpp| {
                     let p = ((row_offset + pos.truncate() as usize) * bpp, pos.fract(), row_fract);
@@ -154,7 +162,8 @@ pub(super) fn draw_texture_line(
                 data,
                 alpha,
                 colorize,
-                (stride, dy),
+                smooth,
+                (stride, dy, row_width_bytes),
                 #[inline(always)]
                 |_| {
                     let pos = (row.truncate() as usize * stride + col, col_fract, row.fract());
@@ -188,9 +197,38 @@ pub(super) fn draw_texture_line(
         data: &[u8],
         alpha: u8,
         color: Color,
-        (stride, delta): (usize, Fixed<i32, 8>),
+        smooth: bool,
+        (stride, delta, row_width_bytes): (usize, Fixed<i32, 8>, usize),
         mut pos: impl FnMut(usize) -> (usize, u8, u8),
     ) {
+        #[cfg(not(feature = "bilinear-filtering"))]
+        let _ = (smooth, row_width_bytes);
+
+        // Bilinear sample of the 4 RGBA channels around (pos, col_f, row_f).
+        // `pos % stride` gives the byte offset within the row,
+        // which bounds the right-neighbor read to the current row.
+        // The bottom-neighbor read falls back to the top one past the last row.
+        #[cfg(feature = "bilinear-filtering")]
+        let bilinear_sample = |pos: usize, col_f: u32, row_f: u32| -> [u32; 4] {
+            let has_right = pos % stride + 4 + 3 < row_width_bytes;
+            let has_below = pos + stride + 3 < data.len();
+            let mut out = [0u32; 4];
+            for ch in 0..4 {
+                let c00 = data[pos + ch] as u32;
+                let c10 = if has_right { data[pos + 4 + ch] as u32 } else { c00 };
+                let top = c00 * (256 - col_f) + c10 * col_f;
+                let bottom = if has_below {
+                    let c01 = data[pos + stride + ch] as u32;
+                    let c11 = if has_right { data[pos + stride + 4 + ch] as u32 } else { c01 };
+                    c01 * (256 - col_f) + c11 * col_f
+                } else {
+                    top
+                };
+                out[ch] = (top * (256 - row_f) + bottom * row_f) >> 16;
+            }
+            out
+        };
+
         match format {
             TexturePixelFormat::Rgb => {
                 for pix in line_buffer {
@@ -225,6 +263,7 @@ pub(super) fn draw_texture_line(
                     }
                 }
             }
+            #[cfg(not(feature = "bilinear-filtering"))]
             TexturePixelFormat::Rgba => {
                 if color.alpha() == 0 {
                     for pix in line_buffer {
@@ -251,6 +290,31 @@ pub(super) fn draw_texture_line(
                         ));
                         pix.blend(c);
                     }
+                }
+            }
+            #[cfg(feature = "bilinear-filtering")]
+            TexturePixelFormat::Rgba => {
+                for pix in line_buffer {
+                    let (r, g, b, a) = if smooth {
+                        let (pos, col_f, row_f) = pos(4);
+                        let s = bilinear_sample(pos, col_f as u32, row_f as u32);
+                        (s[0] as u8, s[1] as u8, s[2] as u8, s[3] as u8)
+                    } else {
+                        let pos = pos(4).0;
+                        (data[pos], data[pos + 1], data[pos + 2], data[pos + 3])
+                    };
+                    let pix_alpha = ((a as u16 * alpha as u16) / 255) as u8;
+                    let c = if color.alpha() == 0 {
+                        PremultipliedRgbaColor::premultiply(Color::from_argb_u8(pix_alpha, r, g, b))
+                    } else {
+                        PremultipliedRgbaColor::premultiply(Color::from_argb_u8(
+                            pix_alpha,
+                            color.red(),
+                            color.green(),
+                            color.blue(),
+                        ))
+                    };
+                    pix.blend(c);
                 }
             }
             TexturePixelFormat::RgbaPremultiplied => {
