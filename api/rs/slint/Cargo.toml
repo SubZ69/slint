@@ -69,6 +69,11 @@ software-renderer-systemfonts = ["renderer-software"]
 # `std` feature, but can be enabled without `std` if you want to use the software renderer in a `#![no_std]` environment and need support for Path elements.
 software-renderer-path = ["i-slint-renderer-software/path"]
 
+# Enable bilinear filtering when scaling Rgba images.
+# Implicitly enabled by `std`.
+# Lets `#![no_std]` targets opt in explicitly.
+software-renderer-bilinear-filtering = ["i-slint-renderer-software/bilinear-filtering"]
+
 ## Slint uses internally some `thread_local` state.
 ##
 ## When the `std` feature is enabled, Slint can use [`std::thread_local!`], but when in a `#![no_std]`

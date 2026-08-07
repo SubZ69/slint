@@ -50,7 +50,7 @@ use i_slint_core::item_rendering::{
     RenderBorderRectangle, RenderImage, RenderRectangle,
 };
 use i_slint_core::item_tree::ItemTreeWeak;
-use i_slint_core::items::{ItemRc, TextOverflow, TextWrap};
+use i_slint_core::items::{ImageRendering, ItemRc, TextOverflow, TextWrap};
 use i_slint_core::lengths::{
     LogicalBorderRadius, LogicalLength, LogicalPoint, LogicalRect, LogicalSize, LogicalVector,
     PhysicalPx, PointLengths, RectLengths, ScaleFactor, SizeLengths,
@@ -2307,6 +2307,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
             tiled,
         }: i_slint_core::graphics::FitResult,
         colorize: Color,
+        smooth: bool,
     ) {
         let global_alpha_u16 = (self.current_state.alpha * 255.) as u16;
         let offset =
@@ -2432,6 +2433,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                     dst_height: target_rect.size.height as _,
                     rotation: self.rotation.orientation,
                     tiling,
+                    smooth,
                 };
 
                 self.processor.process_target_texture(&t, clipped_target.cast());
@@ -2505,6 +2507,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                         dst_height: target_rect.size.height as _,
                         rotation: self.rotation.orientation,
                         tiling,
+                        smooth,
                     };
 
                     self.processor.process_target_texture(&t, clipped_target.cast());
@@ -2613,6 +2616,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                             // color already is mixed with global alpha
                             alpha: color.alpha(),
                             rotation: self.rotation.orientation,
+                            smooth: false,
                             dx: scale_delta,
                             dy: scale_delta,
                             off_x: Fixed::try_from_fixed(off_x).unwrap(),
@@ -2690,6 +2694,7 @@ impl<'a, T: ProcessScene> SceneBuilder<'a, T> {
                         dst_height: target_rect.size.height as _,
                         rotation: self.rotation.orientation,
                         tiling: None,
+                        smooth: false,
                     };
 
                     self.processor.process_target_texture(&t, clipped_target.cast());
@@ -2868,6 +2873,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
         let geom = LogicalRect::from(size);
         if self.should_draw(&geom) {
             let source = image.source();
+            let smooth = image.rendering() != ImageRendering::Pixelated;
 
             let image_inner: &ImageInner = (&source).into();
             if let ImageInner::NineSlice(nine) = image_inner {
@@ -2881,7 +2887,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                     image.alignment(),
                     image.tiling(),
                 ) {
-                    self.draw_image_impl(&nine.0, fit, colorize);
+                    self.draw_image_impl(&nine.0, fit, colorize, smooth);
                 }
                 return;
             }
@@ -2903,7 +2909,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                 image.alignment(),
                 image.tiling(),
             );
-            self.draw_image_impl(image_inner, fit, image.colorize().color());
+            self.draw_image_impl(image_inner, fit, image.colorize().color(), smooth);
         }
     }
 
@@ -3339,6 +3345,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
                     dst_height: height as _,
                     rotation: self.rotation.orientation,
                     tiling: None,
+                    smooth: false,
                 };
                 self.processor
                     .process_target_texture(&t, geometry.cast().transformed(self.rotation));
@@ -3409,7 +3416,7 @@ impl<T: ProcessScene> i_slint_core::item_rendering::ItemRenderer for SceneBuilde
             Default::default(),
             Default::default(),
         );
-        self.draw_image_impl(image_inner, fit, i_slint_core::Color::default());
+        self.draw_image_impl(image_inner, fit, i_slint_core::Color::default(), true);
     }
 
     fn window(&self) -> &i_slint_core::window::WindowInner {
@@ -3627,6 +3634,7 @@ impl<T: ProcessScene> sharedparley::GlyphRenderer for SceneBuilder<'_, T> {
                 dst_height: target_rect.size.height as _,
                 rotation: self.rotation.orientation,
                 tiling: None,
+                smooth: false,
             };
 
             self.processor.process_target_texture(&t, clipped_target.cast());
